@@ -15,7 +15,7 @@ Imported Unity **5.6.0f3** project; original game logic remains in `Assets/scrip
 
 ## Security design
 - Machine credential = HMAC-SHA256(MACHINE_MASTER_KEY, 'slot-kiosk-machine-v1:' + machine ID). Provision once over protected admin session, don't commit/store in source. Each request has machine ID, ±5 min timestamp, unique nonce, body digest and HMAC; D1 rejects nonce replays.
-- Credit is in-game only, never real money. A machine gets one opaque one-use spin token at a time. Tokens bind event, session and machine; scores bounded and idempotent. Replays cannot award points twice.
+- Credit is in-game only, never real money. A machine gets one opaque one-use spin token at a time. Tokens bind event, session and machine; scores bounded and idempotent. Outstanding tokens remain eligible for seven days of offline retry, then expire and may require operator review. Replays cannot award points twice.
 - Score values are still computed by the **legacy Unity client** and cannot be fully trusted without a port of the rules to server-side verification. Treat competition results as **provisional** until authoritative validation is completed.
 - Player nicknames appear on the public leaderboard. PINs are PBKDF2-hashed with distinct salt + server pepper. This is not verified email identity; enable stronger identity verification, Turnstile/rate limits and privacy policy before public rollout.
 - Disable blocks new check-in links and play-token issuance; already-issued score submissions are accepted and kiosk acknowledges command sequence. A scheduled daily cleanup removes expired request nonces and stale QR check-in links.

@@ -89,7 +89,7 @@ public class KioskGameBridge : MonoBehaviour
         api.ReserveSpin(cost, (ok, token) =>
         {
             reserving = false;
-            if (!ok || !api.AcceptNewGames || requestedSession != api.ActiveSessionId)
+            if (!ok || requestedSession != api.ActiveSessionId)
             {
                 Debug.LogWarning("Spin reservation refused or machine disabled: " + token);
                 return;

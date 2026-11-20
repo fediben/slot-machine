@@ -77,7 +77,8 @@ async function machineRoutes(request, env, route, body, machine) {
     const cost = body && body.cost, sessionId = body && body.session_id;
     if (!eligible(machine)) return error("MACHINE_DISABLED", 423);
     if (![50,150].includes(cost) || typeof sessionId !== "string") return error("INVALID_SPIN_REQUEST");
-    const token = randomCode(24), tokenId = uid(), expiry = now() + 86400000;
+    await sql(env, "UPDATE spin_tokens SET state='void' WHERE session_id=? AND state='issued' AND expires_at<?", sessionId, now()).run();
+    const token = randomCode(24), tokenId = uid(), expiry = now() + 7*86400000;
     try {
       const r = await sql(env, `INSERT INTO spin_tokens(id,session_id,token_hash,cost,expires_at,created_at)
         SELECT ?,s.id,?,?,?,? FROM sessions s JOIN events e ON e.id=s.event_id
@@ -101,12 +102,13 @@ async function machineRoutes(request, env, route, body, machine) {
     const clientHash = typeof body.client_result_hash === "string" && /^[a-f0-9]{64}$/.test(body.client_result_hash) ? body.client_result_hash : null;
     const playedAt = Number.isSafeInteger(body.played_at) && body.played_at >= spin.created_at - 300000 && body.played_at <= now() + 300000 ? body.played_at : null;
     try {
-      await env.DB.batch([
-        sql(env, "UPDATE spin_tokens SET state='consumed' WHERE id=? AND state='issued'", spin.id),
+      const results = await env.DB.batch([
+        sql(env, "UPDATE spin_tokens SET state='consumed' WHERE id=? AND state='issued' AND expires_at>=?", spin.id, now()),
         sql(env, `INSERT INTO scores(id,token_id,session_id,event_id,machine_id,award,client_result_hash,flagged,played_at,received_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?)`, uid(), spin.id, sessionId, spin.event_id, machine.id, award, clientHash, award >= Math.min(3000, spin.max_award_per_spin) ? 1 : 0, playedAt, now()),
-        sql(env, "UPDATE sessions SET credits=credits-?+?,total_score=total_score+? WHERE id=? AND state='active'", spin.cost, award, award, sessionId)
+          SELECT ?,?,?,?,?,?,?,?,?,? FROM spin_tokens WHERE id=? AND state='consumed'`, uid(), spin.id, sessionId, spin.event_id, machine.id, award, clientHash, award >= Math.min(3000, spin.max_award_per_spin) ? 1 : 0, playedAt, now(), spin.id),
+        sql(env, "UPDATE sessions SET credits=credits-?+?,total_score=total_score+? WHERE id=? AND state='active' AND EXISTS(SELECT 1 FROM scores WHERE token_id=?)", spin.cost, award, award, sessionId, spin.id)
       ]);
+      if (results.some(r => r.meta.changes !== 1)) return error("SCORE_WRITE_CONFLICT", 409);
     } catch {
       const after = await sql(env, "SELECT award FROM scores WHERE token_id=?", spin.id).first();
       if (after && after.award === award) return json({ accepted: true, duplicate: true });
@@ -118,6 +120,7 @@ async function machineRoutes(request, env, route, body, machine) {
   if (route === "/api/machine/end" && request.method === "POST") {
     const sessionId = body && body.session_id;
     if (typeof sessionId !== "string") return error("INVALID_SESSION");
+    await sql(env, "UPDATE spin_tokens SET state='void' WHERE session_id=? AND state='issued' AND expires_at<?", sessionId, now()).run();
     const inFlight = await sql(env, `SELECT t.id FROM spin_tokens t JOIN sessions s ON s.id=t.session_id
       WHERE s.id=? AND s.machine_id=? AND t.state='issued' LIMIT 1`, sessionId, machine.id).first();
     if (inFlight) return error("UNSUBMITTED_SPIN", 409);
@@ -231,6 +234,7 @@ export default {
     const time = now();
     await env.DB.batch([
       sql(env, "DELETE FROM machine_nonces WHERE expires_at<?", time),
+      sql(env, "UPDATE spin_tokens SET state='void' WHERE state='issued' AND expires_at<?", time),
       sql(env, "DELETE FROM checkin_links WHERE expires_at<?", time - 7*86400000)
     ]);
   },
@@ -245,6 +249,7 @@ export default {
         return error("ADMIN_ACCESS_REQUIRED", 401);
       }
       if (path.startsWith("/api/events/") && path.endsWith("/leaderboard") && request.method === "GET") {
+        if (!env.DB) return error("DATABASE_NOT_CONFIGURED", 503);
         const slug = path.split("/")[3];
         return slugOk(slug) ? leaderboard(env, slug) : error("INVALID_EVENT", 404);
       }
