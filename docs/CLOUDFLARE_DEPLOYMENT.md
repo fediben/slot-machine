@@ -17,7 +17,7 @@ Open PowerShell in the `cloudflare` folder on the development branch, then:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-cloudflare.ps1
 ```
 
-This creates a D1 database and writes its ID into local `wrangler.toml`. **It does not deploy**.
+This reuses an existing **slot-kiosk-db** in the authenticated Cloudflare account (or creates it only if missing), then writes its ID into local `wrangler.toml`. **It does not deploy**. Re-running the preparation command is safe.
 
 After Access and Turnstile are configured, the operator can deploy a non-prize staging instance:
 
@@ -30,7 +30,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-cloudflare
   -Deploy
 ```
 
-The script applies D1 migrations, deploys the Worker, creates random machine-master and profile-pepper secrets, and prompts privately for the Turnstile secret. **Never rotate the machine master without reprovisioning every kiosk.** Always review migrations and keep backups before applying to data-bearing D1.
+The script applies D1 migrations, deploys the Worker, provisions missing machine-master/profile-pepper secrets once, and prompts privately for a missing Turnstile secret. Subsequent executions preserve existing secrets. **Never rotate the machine master without reprovisioning every kiosk.** Always review migrations and keep backups before applying to data-bearing D1.
 
 ## 3. Provision a demo event
 
@@ -65,3 +65,18 @@ Upload `themeslug/background.webp` and `themeslug/logo.png`. The Worker serves i
 - Machine controls must fail closed when connectivity is lost. Already-authorized rounds can finish, but no new spin tokens may be issued offline.
 
 No real-money wagering, cash payouts, purchase of game credits or transferable credit value are included.
+
+
+## Recovery: database already exists / accidentally cloned twice
+
+If `wrangler d1 create slot-kiosk-db` says **a database with that name already exists**, do **not** delete the database. Update the development branch to the current recovery script:
+
+```powershell
+Set-Location "$HOME\slot-machine\cloudflare\slot-machine\cloudflare"
+git pull --ff-only origin feature/kiosk-cloudflare-v1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-cloudflare.ps1
+```
+
+The nested path is an accidental clone inside another clone; it is usable for now, but do not `git clone` again. The updated script discovers `slot-kiosk-db` by exact name using `wrangler d1 list --json` and configures its existing UUID without creating anything. It prints **PREPARED ONLY** on success. Move to the outer repo later only after checking for uncommitted changes in both locations; deleting the inner folder before that risks losing local work.
+
+Do not add `-Deploy` until Access + Turnstile are ready and verified. `npx wrangler whoami` confirms authentication but is **not proof of deployment**.
