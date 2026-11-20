@@ -23,7 +23,8 @@ export function constantEqual(a, b) {
   return diff === 0;
 }
 export async function canonicalSignature(key, req, body, timestamp, nonce) {
-  const path = new URL(req.url).pathname;
+  const url = new URL(req.url);
+  const path = url.pathname + url.search;
   const digest = await shaHex(body);
   return hmacBytes(key, [timestamp, nonce, req.method.toUpperCase(), path, digest].join("\n"));
 }

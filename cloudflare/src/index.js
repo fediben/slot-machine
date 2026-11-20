@@ -36,7 +36,7 @@ async function checkMachine(request, env, raw) {
   if (!machine) return { issue: error("UNKNOWN_MACHINE", 401) };
   const key = await deriveMachineKey(env.MACHINE_MASTER_KEY, id);
   const expected = hex(await canonicalSignature(key, request, raw, timestamp, nonce));
-  if (!constantEqual(unb64url(b64url(Uint8Array.from(signature.match(/../g), x => parseInt(x, 16)))), unb64url(b64url(Uint8Array.from(expected.match(/../g), x => parseInt(x, 16)))))) return { issue: error("INVALID_MACHINE_SIGNATURE", 401) };
+  if (!constantEqual(Uint8Array.from(signature.match(/../g), x => parseInt(x, 16)), Uint8Array.from(expected.match(/../g), x => parseInt(x, 16)))) return { issue: error("INVALID_MACHINE_SIGNATURE", 401) };
   const inserted = await sql(env, "INSERT OR IGNORE INTO machine_nonces(machine_id,nonce,expires_at) VALUES(?,?,?)", id, nonce, now() + 600000).run();
   if (inserted.meta.changes !== 1) return { issue: error("REPLAYED_REQUEST", 409) };
   await sql(env, "UPDATE machines SET last_seen_at=? WHERE id=?", now(), id).run();
@@ -81,7 +81,7 @@ async function machineRoutes(request, env, route, body, machine) {
     try {
       const r = await sql(env, `INSERT INTO spin_tokens(id,session_id,token_hash,cost,expires_at,created_at)
         SELECT ?,s.id,?,?,?,? FROM sessions s JOIN events e ON e.id=s.event_id
-        WHERE s.id=? AND s.machine_id=? AND s.state='active' AND s.credits>=? AND e.state='active'`,
+        WHERE s.id=? AND s.machine_id=? AND s.state='active' AND s.credits>=? AND e.state='active' AND (SELECT enabled FROM machines WHERE id=s.machine_id)=1`,
         tokenId, await shaHex(token), cost, expiry, now(), sessionId, machine.id, cost).run();
       if (r.meta.changes !== 1) return error("NO_AVAILABLE_CREDIT_OR_SESSION", 409);
     } catch { return error("PENDING_SPIN_EXISTS", 409); }
@@ -145,6 +145,8 @@ async function joinRoutes(request, env, path, body) {
   if (!link || link.expires_at <= now() || link.used_at || !link.enabled || link.state !== "active") return error("QR_LINK_EXPIRED", 410);
   if (request.method === "GET") return json({ event: link.event_name, machine: link.machine_name, expires_at: link.expires_at });
   if (request.method !== "POST" || !body) return error("INVALID_REQUEST");
+  if (!env.PROFILE_PEPPER || env.PROFILE_PEPPER.length < 32) return error("PROFILE_SECURITY_NOT_CONFIGURED", 503);
+  if (env.APP_MODE !== "development" && (!env.TURNSTILE_SECRET || !env.TURNSTILE_SITE_KEY)) return error("CHECKIN_SECURITY_NOT_CONFIGURED", 503);
   const nickname = typeof body.name === "string" ? body.name.trim() : "";
   const pin = body.pin;
   if (!nameOk(nickname) || typeof pin !== "string" || !/^\d{6,12}$/.test(pin)) return error("INVALID_NAME_OR_PIN");
@@ -169,7 +171,8 @@ async function joinRoutes(request, env, path, body) {
       sql(env, "UPDATE checkin_links SET used_at=?,claim_id=? WHERE token_hash=? AND used_at IS NULL AND expires_at>?", now(), claim, hash, now()),
       sql(env, `INSERT INTO sessions(id,event_id,machine_id,profile_id,credits,created_at)
         SELECT ?,l.event_id,l.machine_id,?,?,? FROM checkin_links l JOIN machines m ON l.machine_id=m.id
-        WHERE l.token_hash=? AND l.claim_id=? AND m.enabled=1`, sessionId, profile.id, link.starting_credits, now(), hash, claim)
+        JOIN events e ON e.id=l.event_id WHERE l.token_hash=? AND l.claim_id=? AND m.enabled=1 AND e.state='active' AND l.expires_at>? AND
+        (SELECT COUNT(*) FROM sessions WHERE profile_id=? AND event_id=l.event_id)<e.max_sessions_per_profile`, sessionId, profile.id, link.starting_credits, now(), hash, claim, now(), profile.id)
     ]);
     if (res[0].meta.changes !== 1 || res[1].meta.changes !== 1) return error("QR_LINK_ALREADY_USED", 409);
   } catch { return error("MACHINE_BUSY_OR_LINK_USED", 409); }
@@ -224,6 +227,13 @@ async function adminRoutes(request, env, path, body, url) {
 }
 
 export default {
+  async scheduled(controller, env) {
+    const time = now();
+    await env.DB.batch([
+      sql(env, "DELETE FROM machine_nonces WHERE expires_at<?", time),
+      sql(env, "DELETE FROM checkin_links WHERE expires_at<?", time - 7*86400000)
+    ]);
+  },
   async fetch(request, env) {
     try {
       const url = new URL(request.url), path = url.pathname;

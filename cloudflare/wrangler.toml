@@ -11,5 +11,8 @@ database_name = "slot-kiosk-db"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 migrations_dir = "migrations"
 
+[triggers]
+crons = ["0 3 * * *"]
+
 [vars]
 APP_MODE = "production"

@@ -191,11 +191,11 @@ public class KioskApiClient : MonoBehaviour
 
     // Call this exactly once at the end of an existing reel/scoring round.
     // Supply the already issued token; do not calculate extra rewards here.
-    public void QueueCompletedScore(string spinToken, int award, string resultHash)
+    public void QueueCompletedScore(string sessionId, string spinToken, int award, string resultHash)
     {
-        if (string.IsNullOrEmpty(ActiveSessionId) || string.IsNullOrEmpty(spinToken)) return;
+        if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(spinToken)) return;
         ScoreRequest item = new ScoreRequest();
-        item.session_id = ActiveSessionId; item.spin_token = spinToken;
+        item.session_id = sessionId; item.spin_token = spinToken;
         item.award = award; item.played_at = EpochMillis(); item.client_result_hash = resultHash;
         pending.items.Add(item);
         SavePending();
