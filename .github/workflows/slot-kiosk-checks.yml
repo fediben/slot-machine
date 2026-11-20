@@ -27,6 +27,14 @@ jobs:
           node --check src/pages.js
       - name: D1 migrations and HTTP end-to-end test
         run: bash tests/run-e2e.sh
+  powershell-preflight:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test D1 recovery without Cloudflare credentials
+        shell: powershell
+        run: |
+          .\\cloudflare\\tests\\preflight.test.ps1
   unity-source-audit:
     runs-on: ubuntu-latest
     steps:

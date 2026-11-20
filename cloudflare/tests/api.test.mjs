@@ -10,6 +10,22 @@ test("health and public join shell do not require D1", async () => {
   assert.equal(page.status, 200);
   assert.match(await page.text(), /Join the game/);
 });
+test("unconfigured admin, invalid authorisation and unsupported methods reject requests", async () => {
+  const env={APP_MODE:"development",ADMIN_DEV_TOKEN:"this-token-is-local-only",DB:{}};
+  const unauth=await app.fetch(new Request("https://kiosk.example/api/admin/events"),env);
+  assert.equal(unauth.status,401);
+  const crossSite=await app.fetch(new Request("https://kiosk.example/api/admin/events",{
+    method:"POST",headers:{"Authorization":"Bearer this-token-is-local-only","Content-Type":"application/json","Origin":"https://other.example"},
+    body:"{}"
+  }),env);
+  assert.equal(crossSite.status,403);
+  const noJson=await app.fetch(new Request("https://kiosk.example/api/admin/events",{
+    method:"POST",headers:{"Authorization":"Bearer this-token-is-local-only","Content-Type":"text/plain"},
+    body:"{}"
+  }),env);
+  assert.equal(noJson.status,415);
+});
+
 test("private admin and unconfigured database fail closed", async () => {
   const env = { APP_MODE: "production" };
   const admin = await app.fetch(new Request("https://kiosk.example/admin"), env);

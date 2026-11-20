@@ -17,6 +17,16 @@ try {
         throw "Node.js / npx is required. Install Node.js LTS first."
     }
 
+    if ($Deploy) {
+        # Fail immediately for examples copied verbatim from documentation.
+        # Do not even attempt D1 resource creation or configuration.
+        foreach ($candidate in @($AccessTeamDomain, $AccessAudience, $TurnstileSiteKey)) {
+            if ([string]::IsNullOrWhiteSpace($candidate) -or
+                $candidate -match '(?i)(YOUR-|EXAMPLE|PLACEHOLDER|REPLACE_ME|<|>)') {
+                throw "Deployment blocked: sample or missing Access/Turnstile values. Obtain the real Access team domain, application AUD and Turnstile site key in Cloudflare. Run without -Deploy to prepare only."
+            }
+        }
+    }
     & npx wrangler whoami
     if ($LASTEXITCODE -ne 0) {
         throw "Cloudflare authentication required. Run: npx wrangler login"

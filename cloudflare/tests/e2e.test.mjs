@@ -15,6 +15,17 @@ const call=(m,path,method="GET",body,nonce=randomUUID().replace(/-/g,""))=>{
 };
 test("D1 event lifecycle, security, replay, stop acknowledgement", {timeout:90000}, async()=>{
  const unique="kiosk-"+randomUUID().slice(0,8);
+ // The operator API must reject cross-site writes, even with a valid dev token.
+ const hostileHeaders={Authorization:"Bearer unit-test-admin-token-123",Origin:"https://attacker.example"};
+ const blocked=await api("/api/admin/events","POST",{name:"CSRF Test",slug:"csrf-demo"},hostileHeaders);
+ assert.equal(blocked.status,403,JSON.stringify(blocked));
+ assert.equal(blocked.data.error,"ADMIN_ORIGIN_FORBIDDEN");
+ const crossSite=await api("/api/admin/events","POST",{name:"CSRF Test",slug:"csrf-demo"},{Authorization:"Bearer unit-test-admin-token-123","Sec-Fetch-Site":"cross-site"});
+ assert.equal(crossSite.status,403);
+ const plain=await fetch(base+"/api/admin/events",{method:"POST",headers:{Authorization:"Bearer unit-test-admin-token-123","Content-Type":"text/plain"},body:JSON.stringify({name:"CSRF Test",slug:"csrf-demo"})});
+ assert.equal(plain.status,415);
+ assert.equal((await plain.json()).error,"ADMIN_JSON_REQUIRED");
+ assert.equal((await api("/api/admin/events")).status,401);
  const ev=await admin("/events","POST",{name:"Event Test Kiosk",slug:unique,starting_credits:500,max_sessions_per_profile:1});
  assert.equal(ev.status,201,JSON.stringify(ev));
  const id=ev.data.id;

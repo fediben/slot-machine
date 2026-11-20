@@ -100,6 +100,7 @@ async function machineRoutes(request, env, route, body, machine) {
     if (spin.state !== "issued" || spin.expires_at < now() || spin.session_state !== "active") return error("SPIN_TOKEN_EXPIRED_OR_USED", 409);
     if (award > spin.max_award_per_spin) return error("AWARD_EXCEEDS_LIMIT", 422);
     const clientHash = typeof body.client_result_hash === "string" && /^[a-f0-9]{64}$/.test(body.client_result_hash) ? body.client_result_hash : null;
+    if (env.APP_MODE !== "development" && !clientHash) return error("SCORE_HASH_REQUIRED", 422);
     const expectedHash = await shaHex(token + ":" + sessionId + ":" + award + ":" + body.played_at);
     if (clientHash && clientHash !== expectedHash) return error("SCORE_INTEGRITY_MISMATCH", 422);
     const playedAt = Number.isSafeInteger(body.played_at) && body.played_at >= spin.created_at - 300000 && body.played_at <= now() + 300000 ? body.played_at : null;
@@ -326,6 +327,14 @@ export default {
       if (!env.DB) return error("DATABASE_NOT_CONFIGURED", 503);
       if (path.startsWith("/api/admin/")) {
         if (!await adminAuthorized(request, env)) return error("ADMIN_ACCESS_REQUIRED", 401);
+        if (request.method !== "GET" && request.method !== "HEAD") {
+          // Block browser cross-site writes even if Access cookies are attached.
+          // JSON-only writes reject HTML forms and other simple-request CSRF.
+          const origin = request.headers.get("Origin");
+          const fetchSite = request.headers.get("Sec-Fetch-Site");
+          if ((origin && origin !== url.origin) || fetchSite === "cross-site") return error("ADMIN_ORIGIN_FORBIDDEN", 403);
+          if (!/^application\/json(?:\s*;|\s*$)/i.test(request.headers.get("Content-Type") || "")) return error("ADMIN_JSON_REQUIRED", 415);
+        }
         return adminRoutes(request, env, path, parseBody(await request.text()), url);
       }
       if (path.startsWith("/api/join/")) return joinRoutes(request, env, path, parseBody(await request.text()));
