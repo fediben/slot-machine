@@ -8,7 +8,7 @@ printf '%s\n' 'MACHINE_MASTER_KEY=unit-testing-machine-master-key-with-over-32-c
 trap 'rm -f .dev.vars wrangler.ci.toml; if [[ -n "${SERVER_PID:-}" ]]; then kill "$SERVER_PID" 2>/dev/null || true; fi' EXIT
 cp wrangler.toml wrangler.ci.toml
 sed -i 's/APP_MODE = "production"/APP_MODE = "development"/' wrangler.ci.toml
-npx wrangler d1 migrations apply slot-kiosk-db --local --config wrangler.ci.toml --persist-to .wrangler/state --yes
+npx wrangler d1 migrations apply slot-kiosk-db --local --config wrangler.ci.toml --persist-to .wrangler/state --force
 npx wrangler dev --local --config wrangler.ci.toml --ip 127.0.0.1 --port 8787 --persist-to .wrangler/state > /tmp/slot-kiosk-wrangler.log 2>&1 &
 SERVER_PID=$!
 ready=0
