@@ -100,7 +100,10 @@ async function machineRoutes(request, env, route, body, machine) {
     if (spin.state !== "issued" || spin.expires_at < now() || spin.session_state !== "active") return error("SPIN_TOKEN_EXPIRED_OR_USED", 409);
     if (award > spin.max_award_per_spin) return error("AWARD_EXCEEDS_LIMIT", 422);
     const clientHash = typeof body.client_result_hash === "string" && /^[a-f0-9]{64}$/.test(body.client_result_hash) ? body.client_result_hash : null;
+    const expectedHash = await shaHex(token + ":" + sessionId + ":" + award + ":" + body.played_at);
+    if (clientHash && clientHash !== expectedHash) return error("SCORE_INTEGRITY_MISMATCH", 422);
     const playedAt = Number.isSafeInteger(body.played_at) && body.played_at >= spin.created_at - 300000 && body.played_at <= now() + 300000 ? body.played_at : null;
+    if (playedAt === null && env.APP_MODE !== "development") return error("INVALID_PLAY_TIMESTAMP", 422);
     try {
       const results = await env.DB.batch([
         sql(env, "UPDATE spin_tokens SET state='consumed' WHERE id=? AND state='issued' AND expires_at>=?", spin.id, now()),
@@ -193,6 +196,36 @@ async function adminRoutes(request, env, path, body, url) {
       VALUES(?,?,?,?,?,?)`, id, body.slug, body.name.trim(), initial, limit, now()).run(); }
     catch { return error("EVENT_SLUG_EXISTS", 409); }
     return json({ id, slug: body.slug }, 201);
+  }
+  const eventUpdate = path.match(/^\/api\/admin\/events\/([a-f0-9-]{36})$/);
+  if (eventUpdate && request.method === "PATCH") {
+    if (!body || !["active", "closed"].includes(body.state)) return error("INVALID_EVENT_STATE");
+    const result = await sql(env, "UPDATE events SET state=? WHERE id=?", body.state, eventUpdate[1]).run();
+    if (result.meta.changes !== 1) return error("EVENT_NOT_FOUND", 404);
+    return json({ event_id: eventUpdate[1], state: body.state });
+  }
+  if (path === "/api/admin/leaderboard" && request.method === "GET") {
+    const eventId = url.searchParams.get("event_id");
+    if (!eventId) return error("EVENT_ID_REQUIRED");
+    const rows = await sql(env, `SELECT p.display_name,s.total_score,s.credits,s.state,m.name AS machine
+      FROM sessions s JOIN profiles p ON p.id=s.profile_id JOIN machines m ON m.id=s.machine_id
+      WHERE s.event_id=? ORDER BY s.total_score DESC,s.created_at ASC LIMIT 100`, eventId).all();
+    return json({ provisional: true, standings: rows.results });
+  }
+  if (path === "/api/admin/settings" && request.method === "GET") {
+    const eventId = url.searchParams.get("event_id");
+    if (!eventId) return error("EVENT_ID_REQUIRED");
+    const r = await sql(env, "SELECT key,value FROM event_settings WHERE event_id=? ORDER BY key",eventId).all();
+    return json({ settings: Object.fromEntries(r.results.map(x=>[x.key,JSON.parse(x.value)])) });
+  }
+  if (path === "/api/admin/settings" && request.method === "PATCH") {
+    if (!body || typeof body.event_id!=="string" || !["leaderboard_title","theme_slug","privacy_notice"].includes(body.key) ||
+        typeof body.value!=="string" || body.value.length>120 || !/^[\\p{L}\\p{N} _.:!?-]*$/u.test(body.value)) return error("INVALID_SETTING");
+    const ev=await sql(env,"SELECT id FROM events WHERE id=?",body.event_id).first();
+    if(!ev) return error("EVENT_NOT_FOUND",404);
+    await sql(env,"INSERT INTO event_settings(event_id,key,value) VALUES(?,?,?) ON CONFLICT(event_id,key) DO UPDATE SET value=excluded.value",
+      body.event_id,body.key,JSON.stringify(body.value)).run();
+    return json({ saved:true });
   }
   if (path === "/api/admin/machines" && request.method === "GET") {
     const eventId = url.searchParams.get("event_id");

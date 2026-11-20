@@ -1,11 +1,13 @@
-name: Slot kiosk API checks
+name: Slot kiosk CI
 on:
   push:
-    paths: ['cloudflare/**', '.github/workflows/slot-kiosk-checks.yml']
+    paths: ['cloudflare/**', 'Assets/scripts/**', 'docs/**', 'linux/**', '.github/workflows/slot-kiosk-checks.yml']
   pull_request:
-    paths: ['cloudflare/**', '.github/workflows/slot-kiosk-checks.yml']
+    paths: ['cloudflare/**', 'Assets/scripts/**', 'docs/**', 'linux/**', '.github/workflows/slot-kiosk-checks.yml']
+permissions:
+  contents: read
 jobs:
-  unit:
+  api:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -15,22 +17,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Security unit tests
+      - run: npm install --no-audit --no-fund
+      - name: API unit and cryptography tests
         run: npm test
-      - name: Worker syntax checks
+      - name: Worker syntax
         run: |
           node --check src/index.js
           node --check src/crypto.js
           node --check src/pages.js
+      - name: D1 migrations and HTTP end-to-end test
+        run: bash tests/run-e2e.sh
   unity-source-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Report legacy Unity version and adapter files
+      - name: Inspect Unity project and kiosk package
         run: |
           cat ProjectSettings/ProjectVersion.txt
-          test -f Assets/scripts/Kiosk/KioskApiClient.cs
-          test -f Assets/scripts/Kiosk/KioskGameBridge.cs
-          test -f Assets/scripts/Kiosk/KioskQrDisplay.cs
-          test -f Assets/scripts/Kiosk/KioskLeaderboard.cs
           test -f Assets/reel_scene.unity
+          for f in KioskApiClient KioskGameBridge KioskQrDisplay KioskLeaderboard KioskInput; do
+            test -f "Assets/scripts/Kiosk/${f}.cs"
+          done
+          bash -n linux/install-kiosk.sh
+          bash -n linux/launch-kiosk.sh

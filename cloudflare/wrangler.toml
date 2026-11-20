@@ -3,12 +3,12 @@ main = "src/index.js"
 compatibility_date = "2026-11-01"
 workers_dev = true
 
-# Run: npx wrangler d1 create slot-kiosk-db
-# Replace this placeholder with the database_id returned by Cloudflare.
+# The valid, non-production placeholder UUID lets local D1 run in CI.
+# Replace before deployment using: npx wrangler d1 create slot-kiosk-db
 [[d1_databases]]
 binding = "DB"
 database_name = "slot-kiosk-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
 [triggers]

@@ -14,8 +14,36 @@ public class KioskApiClient : MonoBehaviour
 {
     [Header("Provision from the protected admin dashboard, NEVER in Git")]
     public string ApiBaseUrl = "http://127.0.0.1:8787";
-    public string MachineId = "";
-    public string MachineKeyBase64Url = "";
+    [NonSerialized] public string MachineId = "";
+    [NonSerialized] public string MachineKeyBase64Url = "";
+
+    [Serializable] private class DeviceConfig { public string api_url; public string machine_id; public string machine_key; }
+    private bool configValid;
+    private void LoadDeviceConfig()
+    {
+        string path = Environment.GetEnvironmentVariable("SLOT_KIOSK_CONFIG_PATH");
+        if (string.IsNullOrEmpty(path)) path = Path.Combine(Application.persistentDataPath, "kiosk-device.json");
+        try
+        {
+            DeviceConfig config = JsonUtility.FromJson<DeviceConfig>(File.ReadAllText(path));
+            Uri endpoint;
+            Guid deviceId;
+            if (config == null || string.IsNullOrEmpty(config.machine_key) ||
+                !Guid.TryParse(config.machine_id, out deviceId) ||
+                !Uri.TryCreate(config.api_url, UriKind.Absolute, out endpoint) ||
+                !(endpoint.Scheme == "https" || (endpoint.Scheme == "http" && endpoint.Host == "127.0.0.1")) ||
+                config.machine_key.Length < 40) throw new Exception("Invalid kiosk device config");
+            ApiBaseUrl = config.api_url.TrimEnd('/');
+            MachineId = config.machine_id;
+            MachineKeyBase64Url = config.machine_key;
+            configValid = true;
+        }
+        catch (Exception ex)
+        {
+            configValid = false;
+            Debug.LogError("Secure kiosk configuration required: " + ex.Message);
+        }
+    }
 
     [Header("Optional status labels")]
     public Text StatusText;
@@ -49,6 +77,7 @@ public class KioskApiClient : MonoBehaviour
     void Start()
     {
         AcceptNewGames = false;
+        LoadDeviceConfig();
         LoadPending();
         StartCoroutine(PollLoop());
     }
@@ -85,7 +114,7 @@ public class KioskApiClient : MonoBehaviour
     }
     private IEnumerator SignedRequest(string method, string path, string body, Action<bool, string> callback)
     {
-        if (string.IsNullOrEmpty(MachineId) || string.IsNullOrEmpty(MachineKeyBase64Url) ||
+        if (!configValid || string.IsNullOrEmpty(MachineId) || string.IsNullOrEmpty(MachineKeyBase64Url) ||
             !Uri.IsWellFormedUriString(ApiBaseUrl, UriKind.Absolute))
         {
             callback(false, "Kiosk has not been provisioned");
@@ -202,7 +231,8 @@ public class KioskApiClient : MonoBehaviour
         if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(spinToken)) return;
         ScoreRequest item = new ScoreRequest();
         item.session_id = sessionId; item.spin_token = spinToken;
-        item.award = award; item.played_at = EpochMillis(); item.client_result_hash = resultHash;
+        item.award = award; item.played_at = EpochMillis();
+        item.client_result_hash = Sha256Hex(spinToken + ":" + sessionId + ":" + award + ":" + item.played_at);
         pending.items.Add(item);
         SavePending();
         if (!flushing) StartCoroutine(FlushQueue());
@@ -262,7 +292,10 @@ public class KioskApiClient : MonoBehaviour
         try
         {
             Directory.CreateDirectory(Application.persistentDataPath);
-            File.WriteAllText(QueuePath, JsonUtility.ToJson(pending));
+            string staged = QueuePath + ".new";
+            File.WriteAllText(staged, JsonUtility.ToJson(pending));
+            if (File.Exists(QueuePath)) File.Delete(QueuePath);
+            File.Move(staged, QueuePath);
         }
         catch (Exception ex) { UpdateStatus("Queue save error: " + ex.Message); }
     }
