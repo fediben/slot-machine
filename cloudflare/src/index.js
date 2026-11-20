@@ -199,10 +199,19 @@ async function adminRoutes(request, env, path, body, url) {
   }
   const eventUpdate = path.match(/^\/api\/admin\/events\/([a-f0-9-]{36})$/);
   if (eventUpdate && request.method === "PATCH") {
-    if (!body || !["active", "closed"].includes(body.state)) return error("INVALID_EVENT_STATE");
-    const result = await sql(env, "UPDATE events SET state=? WHERE id=?", body.state, eventUpdate[1]).run();
-    if (result.meta.changes !== 1) return error("EVENT_NOT_FOUND", 404);
-    return json({ event_id: eventUpdate[1], state: body.state });
+    if (!body || typeof body !== "object") return error("INVALID_EVENT_SETTINGS");
+    const current=await sql(env,"SELECT * FROM events WHERE id=?",eventUpdate[1]).first();
+    if(!current) return error("EVENT_NOT_FOUND",404);
+    const state=body.state===undefined?current.state:body.state;
+    const sessions=body.max_sessions_per_profile===undefined?current.max_sessions_per_profile:body.max_sessions_per_profile;
+    const credits=body.starting_credits===undefined?current.starting_credits:body.starting_credits;
+    const maxAward=body.max_award_per_spin===undefined?current.max_award_per_spin:body.max_award_per_spin;
+    if (!["active","closed"].includes(state) || !Number.isInteger(sessions) || sessions<1 || sessions>100 ||
+        !Number.isInteger(credits) || credits<0 || credits>50000 ||
+        !Number.isInteger(maxAward) || maxAward<0 || maxAward>50000) return error("INVALID_EVENT_SETTINGS");
+    await sql(env,"UPDATE events SET state=?,max_sessions_per_profile=?,starting_credits=?,max_award_per_spin=? WHERE id=?",
+      state,sessions,credits,maxAward,eventUpdate[1]).run();
+    return json({ event_id:eventUpdate[1],state,max_sessions_per_profile:sessions,starting_credits:credits,max_award_per_spin:maxAward });
   }
   if (path === "/api/admin/leaderboard" && request.method === "GET") {
     const eventId = url.searchParams.get("event_id");
@@ -280,6 +289,34 @@ export default {
       if (path === "/admin" && request.method === "GET") {
         if (env.APP_MODE === "development" || await adminAuthorized(request, env)) return html(adminPage());
         return error("ADMIN_ACCESS_REQUIRED", 401);
+      }
+      const theme = path.match(/^\/api\/events\/([a-z0-9-]+)\/theme$/);
+      if (theme && request.method === "GET") {
+        if (!env.DB) return error("DATABASE_NOT_CONFIGURED", 503);
+        const event = await sql(env, "SELECT id,name FROM events WHERE slug=?",theme[1]).first();
+        if (!event) return error("EVENT_NOT_FOUND", 404);
+        const setting=await sql(env,"SELECT value FROM event_settings WHERE event_id=? AND key='theme_slug'",event.id).first();
+        let folder=theme[1];
+        if (setting) {
+          try { const candidate=JSON.parse(setting.value);if(/^[a-z0-9-]{3,40}$/.test(candidate))folder=candidate; } catch {}
+        }
+        if (!env.ASSETS) return json({ theme: folder, background_url: null, logo_url: null });
+        const asset=await env.ASSETS.get(folder + "/manifest.json");
+        if (!asset) return json({ theme: folder, background_url: null, logo_url: null });
+        let manifest;
+        try { manifest=JSON.parse(await asset.text()); } catch { return error("THEME_MANIFEST_INVALID", 500); }
+        const valid=f=>typeof f==="string" && /^[a-zA-Z0-9_.-]+\.(png|jpg|jpeg|webp)$/.test(f);
+        const origin=new URL(request.url).origin;
+        return json({ theme: folder, background_url:valid(manifest.background)?origin+"/api/themes/"+folder+"/"+manifest.background:null,
+          logo_url:valid(manifest.logo)?origin+"/api/themes/"+folder+"/"+manifest.logo:null });
+      }
+      const file = path.match(/^\/api\/themes\/([a-z0-9-]+)\/([a-zA-Z0-9_.-]+\.(?:png|jpg|jpeg|webp))$/);
+      if (file && request.method === "GET") {
+        if (!env.ASSETS) return error("THEMES_NOT_CONFIGURED", 404);
+        const asset = await env.ASSETS.get(file[1]+"/"+file[2]);
+        if (!asset) return error("ASSET_NOT_FOUND", 404);
+        const kind = file[2].endsWith(".webp")?"image/webp":file[2].endsWith(".png")?"image/png":"image/jpeg";
+        return new Response(asset.body, { headers: { "Content-Type":kind, "Cache-Control":"public,max-age=3600", "X-Content-Type-Options":"nosniff" } });
       }
       if (path.startsWith("/api/events/") && path.endsWith("/leaderboard") && request.method === "GET") {
         if (!env.DB) return error("DATABASE_NOT_CONFIGURED", 503);

@@ -51,9 +51,17 @@ table{border-collapse:collapse;width:100%;font-size:.92rem}td,th{border-bottom:1
 <div id="status" role="status" aria-live="polite"></div>
 <section><label for="devToken">Local development token (leave empty when using Cloudflare Access)</label><input id="devToken" type="password" placeholder="Only needed in local development"><button id="reload">Refresh dashboard</button></section>
 <div class="grid"><section><h2>New event</h2><form id="eventForm"><label>Title<input name="name" required minlength="3" placeholder="Geneva Demo Night"></label><label>Slug<input name="slug" required minlength="3" placeholder="geneva-demo-night"></label><label>Opening credits<input name="starting_credits" type="number" min="0" max="50000" value="500"></label><label>Sessions per player<input name="max_sessions_per_profile" type="number" min="1" max="100" value="1"></label><button>Create event</button></form></section>
-<section><h2>Selected event</h2><select id="events"><option value="">Select event</option></select><div id="eventInfo"></div><h3>Register a machine</h3><form id="machineForm"><label>Machine name<input name="name" required minlength="3" placeholder="Kiosk C2"></label><button>Add kiosk</button></form><p id="provision" class="muted"></p></section></div>
+<section><h2>Selected event</h2><select id="events"><option value="">Select event</option></select><div id="eventInfo"></div>
+<form id="eventSettingsForm">
+<label>Event status<select id="eventState"><option value="active">Active</option><option value="closed">Closed</option></select></label>
+<label>Starting gameplay credits<input id="eventCredits" type="number" min="0" max="50000" required></label>
+<label>Max sessions per profile<input id="eventLimit" type="number" min="1" max="100" required></label>
+<label>Score cap per spin<input id="eventMaxAward" type="number" min="0" max="50000" required></label>
+<button>Save event rules</button>
+</form><h3>Register a machine</h3><form id="machineForm"><label>Machine name<input name="name" required minlength="3" placeholder="Kiosk C2"></label><button>Add kiosk</button></form><p id="provision" class="muted"></p></section></div>
 <section><h2>Machines</h2><p class="muted">Disable commands block new sessions and play tokens; kiosks must acknowledge the command.</p><table><thead><tr><th>Machine</th><th>Control</th><th>Command / Ack</th><th>Last seen</th></tr></thead><tbody id="machines"></tbody></table></section>
-<section><h2>Latest scores</h2><p class="muted">Provisional results: Unity scores are not yet independently recalculated.</p><table><thead><tr><th>Player</th><th>Machine</th><th>Award</th><th>Review flag</th></tr></thead><tbody id="scores"></tbody></table></section>
+<section><h2>Event standings</h2><table><thead><tr><th>Player</th><th>Credits left</th><th>Points</th><th>Status</th></tr></thead><tbody id="standings"></tbody></table></section>
+<section><h2>Latest scores</h2><button id="exportCsv">Download event scores CSV</button><p class="muted">Provisional results: Unity scores are not yet independently recalculated.</p><table><thead><tr><th>Player</th><th>Machine</th><th>Award</th><th>Review flag</th></tr></thead><tbody id="scores"></tbody></table></section>
 <script>
 let currentEvents=[];
 const $=id=>document.getElementById(id),say=t=>$('status').textContent=t;
@@ -69,18 +77,31 @@ if(events.some(x=>x.id===old))el.value=old;else if(events.length)el.value=events
 await refreshSelected();
 }
 async function refreshSelected(){
-const id=$('events').value;$('machines').replaceChildren();$('scores').replaceChildren();$('eventInfo').textContent='';
+const id=$('events').value;$('machines').replaceChildren();$('scores').replaceChildren();$('standings').replaceChildren();$('eventInfo').textContent='';
 if(!id)return;const ev=currentEvents.find(x=>x.id===id);$('eventInfo').textContent=ev?'Status: '+ev.state+' | leaderboard: /api/events/'+ev.slug+'/leaderboard':'';
-const [{machines},{scores}]=await Promise.all([api('/api/admin/machines?event_id='+encodeURIComponent(id)),api('/api/admin/scores?event_id='+encodeURIComponent(id))]);
+if(ev){$('eventState').value=ev.state;$('eventCredits').value=ev.starting_credits;$('eventLimit').value=ev.max_sessions_per_profile;$('eventMaxAward').value=ev.max_award_per_spin;}
+const [{machines},{scores},{standings}]=await Promise.all([api('/api/admin/machines?event_id='+encodeURIComponent(id)),api('/api/admin/scores?event_id='+encodeURIComponent(id)),api('/api/admin/leaderboard?event_id='+encodeURIComponent(id))]);
 machines.forEach(m=>{const tr=document.createElement('tr');cell(tr,m.name);const control=document.createElement('td'),button=document.createElement('button');button.textContent=m.enabled?'Disable':'Enable';if(m.enabled)button.className='off';
 button.onclick=async()=>{try{await api('/api/admin/machines/'+m.id,'PATCH',{enabled:!m.enabled});await refreshSelected();say('Command sent. Wait for acknowledgement.');}catch(e){say(e.message)}};control.append(button);tr.append(control);
 cell(tr,m.command_seq+' / '+m.ack_seq+(m.command_seq===m.ack_seq?' ✓':' pending'));
-cell(tr,m.last_seen_at?new Date(m.last_seen_at).toLocaleString():'Never');$('machines').append(tr)});
+cell(tr,m.last_seen_at?(Date.now()-m.last_seen_at>20000?'OFFLINE · ':'ONLINE · ')+new Date(m.last_seen_at).toLocaleString():'Never connected');$('machines').append(tr)});
+standings.forEach(s=>{const tr=document.createElement('tr');cell(tr,s.display_name);cell(tr,s.credits);cell(tr,s.total_score);cell(tr,s.state);$('standings').append(tr)});
 scores.forEach(s=>{const tr=document.createElement('tr');cell(tr,s.display_name);cell(tr,s.machine);cell(tr,s.award);cell(tr,s.flagged?'Review':'—');$('scores').append(tr)});
 }
 $('reload').onclick=()=>refreshEvents().catch(e=>say(e.message));$('events').onchange=()=>refreshSelected().catch(e=>say(e.message));
 $('eventForm').onsubmit=async e=>{e.preventDefault();try{const f=new FormData(e.target);const item=Object.fromEntries(f);item.starting_credits=Number(item.starting_credits);item.max_sessions_per_profile=Number(item.max_sessions_per_profile);
 await api('/api/admin/events','POST',item);say('Event created');await refreshEvents();}catch(e){say(e.message)}};
+$('eventSettingsForm').onsubmit=async e=>{e.preventDefault();const id=$('events').value;if(!id)return;
+try{await api('/api/admin/events/'+id,'PATCH',{state:$('eventState').value,starting_credits:Number($('eventCredits').value),max_sessions_per_profile:Number($('eventLimit').value),max_award_per_spin:Number($('eventMaxAward').value)});
+say('Event rules updated');await refreshEvents();}catch(e){say(e.message);}};
+$('exportCsv').onclick=async()=>{const id=$('events').value;if(!id)return;
+try{const {scores}=await api('/api/admin/scores?event_id='+encodeURIComponent(id));
+const safe=v=>{let t=String(v??'');if(/^[=+@-]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"';};
+const rows=[['Player','Machine','Award','Flagged','Received UTC'],...scores.map(s=>[s.display_name,s.machine,s.award,s.flagged,new Date(s.received_at).toISOString()])];
+const csv=rows.map(row=>row.map(safe).join(',')).join('\\r\\n');
+const object=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+const link=document.createElement('a');link.href=object;link.download='slot-scores-'+id+'.csv';link.click();
+setTimeout(()=>URL.revokeObjectURL(object),5000);say('CSV export created');}catch(e){say(e.message);}};
 $('machineForm').onsubmit=async e=>{e.preventDefault();try{const name=new FormData(e.target).get('name');const event_id=$('events').value;if(!event_id)throw Error('Select an event');
 const r=await api('/api/admin/machines','POST',{name,event_id});
 $('provision').textContent='SAVE NOW — Machine ID: '+r.id+' | machine key (shown once): '+r.machine_key;

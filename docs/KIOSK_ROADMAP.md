@@ -20,3 +20,12 @@ Imported Unity **5.6.0f3** project; original game logic remains in `Assets/scrip
 - Player nicknames appear on the public leaderboard. PINs are PBKDF2-hashed with distinct salt + server pepper. This is not verified email identity; enable stronger identity verification, Turnstile/rate limits and privacy policy before public rollout.
 - Disable blocks new check-in links and play-token issuance; already-issued score submissions are accepted and kiosk acknowledges command sequence. A scheduled daily cleanup removes expired request nonces and stale QR check-in links.
 - This branch does not deploy production resources or generate device credentials. Migrate D1 and configure Access/secrets manually under your own account.
+
+## One-click Unity scene integration (source-only)
+1. Clone/fetch `feature/kiosk-cloudflare-v1`; open `Assets/reel_scene.unity` in Unity. Back up the original scene and verify imports.
+2. Choose `Tools > Slot Kiosk > Prepare Event Scene`; this attaches the event bridge, signed API client, input adapter, QR display and leaderboard, and disables the legacy input path.
+3. Choose `Tools > Slot Kiosk > Set Linux Build Scene`. The optional `Tools > Slot Kiosk > Build Linux x86-64` command requires the Unity Linux build module.
+4. Provision a machine via a protected admin session and create `device.json` outside Unity source. See `linux/README.md` and `docs/CLOUDFLARE_DEPLOYMENT.md`.
+5. Validate actual spin/bonus payout and reconciliation in the Unity Editor, two-kiosk simulation, power-loss recovery, USB input, QR scanning on a real phone, kiosk restart and remote disabled acknowledgements.
+
+The project is a **legacy Unity 5.6 source tree**. Modern Unity upgrades, compiler compatibility and Linux builds remain unverified until tested in an installed Unity Editor. The new optional KioskThemeLoader can be assigned to specific RawImage surfaces; it is not auto-attached, to avoid obscuring the game reels.

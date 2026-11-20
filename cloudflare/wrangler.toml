@@ -16,3 +16,8 @@ crons = ["0 3 * * *"]
 
 [vars]
 APP_MODE = "production"
+
+# Optional only after creating slot-kiosk-assets with Wrangler:
+# [[r2_buckets]]
+# binding = "ASSETS"
+# bucket_name = "slot-kiosk-assets"
