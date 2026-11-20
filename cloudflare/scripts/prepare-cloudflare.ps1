@@ -3,6 +3,7 @@ param(
     [string]$AccessTeamDomain = "",
     [string]$AccessAudience = "",
     [string]$TurnstileSiteKey = "",
+    [Security.SecureString]$TurnstileSecret = $null,
     [switch]$Deploy,
     [switch]$EnableR2
 )
@@ -182,8 +183,10 @@ try {
     if ($existingNames -contains "TURNSTILE_SECRET") {
         Write-Host "Preserving existing TURNSTILE_SECRET" -ForegroundColor Green
     } else {
-        $turnstileSecret = Read-Host "Paste Turnstile secret (hidden)" -AsSecureString
-        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($turnstileSecret)
+        if ($null -eq $TurnstileSecret) {
+            $TurnstileSecret = Read-Host "Paste Turnstile secret (hidden)" -AsSecureString
+        }
+        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($TurnstileSecret)
         try {
             $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
             $plain | & npx wrangler secret put TURNSTILE_SECRET

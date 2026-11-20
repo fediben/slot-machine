@@ -80,3 +80,30 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-cloudf
 The nested path is an accidental clone inside another clone; it is usable for now, but do not `git clone` again. The updated script discovers `slot-kiosk-db` by exact name using `wrangler d1 list --json` and configures its existing UUID without creating anything. It prints **PREPARED ONLY** on success. Move to the outer repo later only after checking for uncommitted changes in both locations; deleting the inner folder before that risks losing local work.
 
 Do not add `-Deploy` until Access + Turnstile are ready and verified. `npx wrangler whoami` confirms authentication but is **not proof of deployment**.
+
+## No ChatGPT Work mode: local setup assistant (review-first)
+
+If ChatGPT cannot operate the Cloudflare dashboard, the repo includes `cloudflare/scripts/setup-account.ps1`. It uses a **short-lived, scoped Cloudflare API token entered privately on the operator's Windows PC** to discover the existing `workers.dev` hostname, Access team domain, and any existing matching resources. It can create one operator-only Access app covering `/admin` and `/api/admin/*` and a Turnstile Managed widget for the actual hostname, then run the existing D1-aware deployment script. Do not paste the API token or Turnstile secret into chat or GitHub.
+
+An administrator must create an account-scoped API token in Cloudflare Dashboard → Profile → API Tokens → Create Token → custom permissions:
+
+- **Account / Access: Apps and Policies / Edit**
+- **Account / Turnstile / Edit** (or Turnstile Sites Write)
+- **Account / Workers Scripts / Read** for `workers.dev` hostname discovery.
+
+Limit token resources to the intended Cloudflare account, use a short expiry, and revoke it after successful configuration. Run the script from a checked-out copy of the feature branch; provide your own real account ID and operator email:
+
+```powershell
+Set-Location "$HOME\slot-machine\cloudflare\slot-machine\cloudflare"
+git pull --ff-only origin feature/kiosk-cloudflare-v1
+
+# Read-only preview. Prompts for API token without displaying it.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-account.ps1 -AccountId "YOUR_ACCOUNT_ID" -OperatorEmail "YOUR_OPERATOR_EMAIL"
+
+# After verifying target hostname and operator email, allow account configuration and deployment:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-account.ps1 -AccountId "YOUR_ACCOUNT_ID" -OperatorEmail "YOUR_OPERATOR_EMAIL" -Apply -Deploy
+```
+
+The script requires explicit typed confirmations `CONFIGURE` and `DEPLOY`. It fails closed if the existing Access app has unexpected paths/policies or a required Turnstile key is missing. It never deletes or re-creates the D1 database, never automatically rotates an existing Worker secret, and keeps Cloudflare credentials in the PowerShell process rather than files. **Do not commit the local modified `wrangler.toml`**. If Cloudflare Zero Trust has not yet been onboarded, the account owner must do that once in the dashboard before the script can find a team domain.
+
+Successful command execution is **not** an automatic pilot approval. Verify live Access enforcement, public QR, actual mobile Turnstile, and Unity hardware acceptance separately.

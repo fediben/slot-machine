@@ -35,6 +35,13 @@ jobs:
         shell: powershell
         run: |
           .\\cloudflare\\tests\\preflight.test.ps1
+          .\\cloudflare\\tests\\account-setup.test.ps1
+      - name: Parse account setup assistant on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile("cloudflare/scripts/setup-account.ps1",[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | Format-Table; exit 1 }
   unity-source-audit:
     runs-on: ubuntu-latest
     steps:
