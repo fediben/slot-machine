@@ -5,8 +5,8 @@ Imported Unity **5.6.0f3** project; original game logic remains in `Assets/scrip
 
 ## Implementation acceptance gates
 1. **Audit/build:** documented legacy dependency inventory, GitHub JS/security CI; licensed Unity Editor for current project build must still be supplied.
-2. **Separation:** preserve original reels and scoring while adding a new adapter; remove old balance and direct QR login in the *new* scene.
-3. **Kiosk:** wire adapter to Unity scene; keyboard/USB mapping, idle leaderboard and on-screen QR need editor verification.
+2. **Separation:** preserve original reels and scoring while adding an isolated bridge/transport; set ReelManager.ManagedByKiosk=true in the new scene to disable legacy input handling. Never enable the old balance/QR login.
+3. **Kiosk:** new bridge, QR renderer and idle leaderboard scripts are included, but must be attached in the Unity Editor and tested with real hardware; verify automatic bonus-spin timing and credit reconciliation. Do not enable for live events without this gate.
 4. **Cloudflare:** D1 migration, events/machines, signed machine calls, Cloudflare Access admin guard.
 5. **QR:** ephemeral kiosk-issued check-in, event-scoped nickname+PIN profile, single-use link and bounded attempts.
 6. **Offline:** queue completed signed submissions for *previously issued* play tokens; no new sessions or unissued spins while offline.

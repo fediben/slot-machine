@@ -25,10 +25,14 @@ public class KioskApiClient : MonoBehaviour
     public bool AcceptNewGames { get; private set; }
     public string ActiveSessionId { get; private set; }
     public string CurrentJoinUrl { get; private set; }
+    public int ServerCredits { get; private set; }
+    public int PendingScoreCount { get { return pending.items.Count; } }
+    public string ActiveEventSlug { get; private set; }
 
     [Serializable] private class MachineInfo { public bool enabled; public int command_seq; public int ack_seq; }
     [Serializable] private class SessionInfo { public string id; public string display_name; public int credits; public int total_score; }
-    [Serializable] private class MachineState { public MachineInfo machine; public SessionInfo session; }
+    [Serializable] private class EventInfo { public string slug; public string name; public string state; }
+    [Serializable] private class MachineState { public MachineInfo machine; public SessionInfo session; public EventInfo @event; }
     [Serializable] private class Checkin { public string join_url; public long expires_at; }
     [Serializable] private class SpinRequest { public string session_id; public int cost; }
     [Serializable] private class SpinResult { public string spin_token; public string session_id; public int cost; public long expires_at; }
@@ -137,6 +141,8 @@ public class KioskApiClient : MonoBehaviour
                         if (state.machine == null) throw new Exception("Malformed machine state");
                         AcceptNewGames = state.machine.enabled && state.session != null;
                         ActiveSessionId = state.session != null ? state.session.id : null;
+                        ServerCredits = state.session != null ? state.session.credits : 0;
+                        ActiveEventSlug = state.@event != null ? state.@event.slug : null;
                         if (PlayerText != null) PlayerText.text = state.session == null ? "Scan to join" : state.session.display_name;
                         UpdateStatus(state.machine.enabled ? (state.session == null ? "READY – waiting for player" : "PLAYER READY") : "DISABLED BY OPERATOR");
                         if (state.machine.command_seq > state.machine.ack_seq)

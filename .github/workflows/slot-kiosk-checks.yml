@@ -30,4 +30,7 @@ jobs:
         run: |
           cat ProjectSettings/ProjectVersion.txt
           test -f Assets/scripts/Kiosk/KioskApiClient.cs
+          test -f Assets/scripts/Kiosk/KioskGameBridge.cs
+          test -f Assets/scripts/Kiosk/KioskQrDisplay.cs
+          test -f Assets/scripts/Kiosk/KioskLeaderboard.cs
           test -f Assets/reel_scene.unity
