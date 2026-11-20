@@ -39,6 +39,10 @@ test("D1 event lifecycle, security, replay, stop acknowledgement", {timeout:9000
  assert.equal(spin.status,200,JSON.stringify(spin));
  assert.equal((await call(m,"/api/machine/spins","POST",{session_id:sid,cost:50})).status,409);
  const ticket=spin.data.spin_token;
+ const otherProvision=await admin("/machines","POST",{event_id:id,name:"Test Kiosk 02"});
+ assert.equal(otherProvision.status,201);
+ const other={id:otherProvision.data.id,key:Buffer.from(otherProvision.data.machine_key,"base64url")};
+ assert.equal((await call(other,"/api/machine/scores","POST",{session_id:sid,spin_token:ticket,award:10,played_at:Date.now()})).status,403);
  const played_at=Date.now(),score={session_id:sid,spin_token:ticket,award:150,played_at,client_result_hash:sha(ticket+":"+sid+":150:"+played_at)};
  assert.equal((await call(m,"/api/machine/scores","POST",{...score,client_result_hash:"0".repeat(64)})).status,422);
  const ok=await call(m,"/api/machine/scores","POST",score);
@@ -51,6 +55,8 @@ test("D1 event lifecycle, security, replay, stop acknowledgement", {timeout:9000
  assert.equal((await admin("/settings?event_id="+id)).data.settings.leaderboard_title,"Geneva Kiosk");
  assert.equal((await admin("/scores?event_id="+id)).data.scores.length,1);
  assert.equal((await admin("/leaderboard?event_id="+id)).data.standings.length,1);
+ const parked=await call(m,"/api/machine/spins","POST",{session_id:sid,cost:50});
+ assert.equal(parked.status,200);
  const disabled=await admin("/machines/"+m.id,"PATCH",{enabled:false});assert.equal(disabled.status,200);
  const disabledState=await call(m,"/api/machine/state");
  assert.equal(disabledState.data.machine.enabled,false);
@@ -59,6 +65,12 @@ test("D1 event lifecycle, security, replay, stop acknowledgement", {timeout:9000
  const seq=disabledState.data.machine.command_seq;
  assert.equal((await call(m,"/api/machine/ack","POST",{command_seq:seq})).status,200);
  assert.equal((await call(m,"/api/machine/state")).data.machine.ack_seq,seq);
+ const playedOffline=Date.now();
+ const offlineScore={session_id:sid,spin_token:parked.data.spin_token,award:0,played_at:playedOffline,
+   client_result_hash:sha(parked.data.spin_token+":"+sid+":0:"+playedOffline)};
+ const synchronized=await call(m,"/api/machine/scores","POST",offlineScore);
+ assert.equal(synchronized.status,200,JSON.stringify(synchronized));
+ assert.equal((await call(m,"/api/machine/scores","POST",offlineScore)).data.duplicate,true);
  assert.equal((await call(m,"/api/machine/end","POST",{session_id:sid})).status,200);
  assert.equal((await admin("/machines/"+m.id,"PATCH",{enabled:true})).status,200);
  const next=await call(m,"/api/machine/checkins","POST",{});

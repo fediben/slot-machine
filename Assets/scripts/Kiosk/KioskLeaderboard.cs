@@ -1,4 +1,4 @@
-// Public idle leaderboard. Last successful ranking remains visible while offline.
+// Public idle leaderboard. Event-scoped cached standings work without connectivity.
 using System;
 using System.IO;
 using System.Collections;
@@ -16,33 +16,42 @@ public class KioskLeaderboard : MonoBehaviour
 
     IEnumerator Start()
     {
-        string cache = Path.Combine(Application.persistentDataPath, "leaderboard-cache.json");
-        if (board != null && File.Exists(cache))
-        {
-            try { Render(JsonUtility.FromJson<Result>(File.ReadAllText(cache))); }
-            catch { board.text = "Leaderboard currently unavailable"; }
-        }
+        string displayedEvent = null;
         while (true)
         {
-            if (api != null && board != null && !string.IsNullOrEmpty(api.ActiveEventSlug))
+            if (api == null || board == null || string.IsNullOrEmpty(api.ActiveEventSlug))
             {
-                string url = api.ApiBaseUrl.TrimEnd('/') + "/api/events/" + api.ActiveEventSlug + "/leaderboard";
-                using (UnityWebRequest req = UnityWebRequest.Get(url))
+                yield return new WaitForSeconds(5);
+                continue;
+            }
+            string slug = api.ActiveEventSlug;
+            if (slug != displayedEvent)
+            {
+                displayedEvent = slug;
+                board.text = "Loading event leaderboard…";
+                try
                 {
-                    yield return req.Send();
-                    if (!req.isError && req.responseCode == 200)
+                    string prior = Path.Combine(Application.persistentDataPath, "leaderboard-" + slug + ".json");
+                    if (File.Exists(prior)) Render(JsonUtility.FromJson<Result>(File.ReadAllText(prior)));
+                }
+                catch { board.text = "Leaderboard available when online"; }
+            }
+            string url = api.ApiBaseUrl.TrimEnd('/') + "/api/events/" + slug + "/leaderboard";
+            using (UnityWebRequest req = UnityWebRequest.Get(url))
+            {
+                yield return req.Send();
+                if (!req.isError && req.responseCode == 200)
+                {
+                    try
                     {
-                        try
+                        var result = JsonUtility.FromJson<Result>(req.downloadHandler.text);
+                        if (result != null && result.leaderboard != null && slug == api.ActiveEventSlug)
                         {
-                            var result = JsonUtility.FromJson<Result>(req.downloadHandler.text);
-                            if (result != null && result.leaderboard != null)
-                            {
-                                Render(result);
-                                try { File.WriteAllText(cache, req.downloadHandler.text); } catch {}
-                            }
+                            Render(result);
+                            try { File.WriteAllText(Path.Combine(Application.persistentDataPath, "leaderboard-" + slug + ".json"), req.downloadHandler.text); } catch {}
                         }
-                        catch (Exception ex) { Debug.LogWarning("Leaderboard parse error: " + ex.Message); }
                     }
+                    catch (Exception ex) { Debug.LogWarning("Leaderboard parse error: " + ex.Message); }
                 }
             }
             yield return new WaitForSeconds(Mathf.Max(5, refreshSeconds));

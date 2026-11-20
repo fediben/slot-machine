@@ -11,11 +11,22 @@ public class KioskQrDisplay : MonoBehaviour
     public Text instructions;
     public int qrSize = 320;
     private Texture2D current;
+    private long expiresAt;
 
-    public void SetLink(string url)
+    void Update()
+    {
+        if (expiresAt > 0)
+        {
+            long milliseconds = (long)(System.DateTime.UtcNow - new System.DateTime(1970,1,1,0,0,0,System.DateTimeKind.Utc)).TotalMilliseconds;
+            if (milliseconds >= expiresAt) Clear();
+        }
+    }
+
+    public void SetLink(string url, long validUntil = 0)
     {
         if (qrTarget == null || string.IsNullOrEmpty(url)) return;
         Clear();
+        expiresAt = validUntil;
         var writer = new BarcodeWriter
         {
             Format = BarcodeFormat.QR_CODE,
@@ -32,6 +43,7 @@ public class KioskQrDisplay : MonoBehaviour
 
     public void Clear()
     {
+        expiresAt = 0;
         if (qrTarget != null) { qrTarget.texture = null; qrTarget.gameObject.SetActive(false); }
         if (current != null) { Destroy(current); current = null; }
         if (instructions != null) instructions.text = "";

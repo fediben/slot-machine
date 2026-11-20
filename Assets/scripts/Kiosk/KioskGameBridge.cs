@@ -44,6 +44,7 @@ public class KioskGameBridge : MonoBehaviour
     void Update()
     {
         if (api == null || reels == null || scores == null) return;
+        if (!api.MachineEnabled && qrView != null) qrView.Clear();
         if (api.ActiveSessionId != knownSession && !roundInProgress && !reserving && !reconciling)
         {
             knownSession = api.ActiveSessionId;
@@ -135,7 +136,7 @@ public class KioskGameBridge : MonoBehaviour
         api.RequestCheckin((ok, url) =>
         {
             if (!ok) { Debug.LogWarning("QR unavailable: " + url); return; }
-            if (qrView != null) qrView.SetLink(url);
+            if (qrView != null) qrView.SetLink(url, api.CurrentJoinExpiresAt);
         });
     }
     void OnEnd()

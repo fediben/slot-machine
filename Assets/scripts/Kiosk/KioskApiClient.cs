@@ -54,6 +54,8 @@ public class KioskApiClient : MonoBehaviour
     public string ActiveSessionId { get; private set; }
     public string CurrentJoinUrl { get; private set; }
     public int ServerCredits { get; private set; }
+    public bool MachineEnabled { get; private set; }
+    public long CurrentJoinExpiresAt { get; private set; }
     public int PendingScoreCount { get { return pending.items.Count; } }
     public string ActiveEventSlug { get; private set; }
 
@@ -161,6 +163,7 @@ public class KioskApiClient : MonoBehaviour
                     if (!ok)
                     {
                         AcceptNewGames = false; // Fail closed on lost control connectivity.
+                        MachineEnabled = false;
                         UpdateStatus("OFFLINE – new spins blocked");
                         return;
                     }
@@ -168,7 +171,8 @@ public class KioskApiClient : MonoBehaviour
                     {
                         MachineState state = JsonUtility.FromJson<MachineState>(response);
                         if (state.machine == null) throw new Exception("Malformed machine state");
-                        AcceptNewGames = state.machine.enabled && state.session != null;
+                        MachineEnabled = state.machine.enabled;
+                        AcceptNewGames = MachineEnabled && state.session != null;
                         ActiveSessionId = state.session != null ? state.session.id : null;
                         ServerCredits = state.session != null ? state.session.credits : 0;
                         ActiveEventSlug = state.@event != null ? state.@event.slug : null;
@@ -203,6 +207,7 @@ public class KioskApiClient : MonoBehaviour
             if (!ok) { onReady(false, response); return; }
             Checkin data = JsonUtility.FromJson<Checkin>(response);
             CurrentJoinUrl = data.join_url;
+            CurrentJoinExpiresAt = data.expires_at;
             if (CheckinUrlText != null) CheckinUrlText.text = CurrentJoinUrl;
             onReady(true, CurrentJoinUrl);
         }));
