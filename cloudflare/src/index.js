@@ -220,7 +220,7 @@ async function adminRoutes(request, env, path, body, url) {
   }
   if (path === "/api/admin/settings" && request.method === "PATCH") {
     if (!body || typeof body.event_id!=="string" || !["leaderboard_title","theme_slug","privacy_notice"].includes(body.key) ||
-        typeof body.value!=="string" || body.value.length>120 || !/^[\\p{L}\\p{N} _.:!?-]*$/u.test(body.value)) return error("INVALID_SETTING");
+        typeof body.value!=="string" || body.value.length>120 || !/^[\p{L}\p{N} _.:!?-]*$/u.test(body.value)) return error("INVALID_SETTING");
     const ev=await sql(env,"SELECT id FROM events WHERE id=?",body.event_id).first();
     if(!ev) return error("EVENT_NOT_FOUND",404);
     await sql(env,"INSERT INTO event_settings(event_id,key,value) VALUES(?,?,?) ON CONFLICT(event_id,key) DO UPDATE SET value=excluded.value",
