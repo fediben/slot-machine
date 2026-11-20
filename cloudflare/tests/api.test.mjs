@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import app from "../src/index.js";
+import app, { turnstileOk } from "../src/index.js";
 
 test("health and public join shell do not require D1", async () => {
   const health = await app.fetch(new Request("https://kiosk.example/health"), {});
@@ -34,4 +34,18 @@ test("private admin and unconfigured database fail closed", async () => {
   assert.equal(board.status, 503);
   const machine = await app.fetch(new Request("https://kiosk.example/api/machine/state"), env);
   assert.equal(machine.status, 503);
+});
+
+test("Turnstile must verify the exact kiosk hostname, not just success", async () => {
+  const original=globalThis.fetch;
+  const env={APP_MODE:"production",TURNSTILE_SECRET:"mock-secret"};
+  const request=new Request("https://slot-kiosk-api.example.workers.dev/api/join/placeholder",{method:"POST"});
+  try {
+    globalThis.fetch=async () => Response.json({success:true,hostname:"unrelated.example.com"});
+    assert.equal(await turnstileOk(env,request,{turnstile:"token"}),false);
+    globalThis.fetch=async () => Response.json({success:true,hostname:"slot-kiosk-api.example.workers.dev"});
+    assert.equal(await turnstileOk(env,request,{turnstile:"token"}),true);
+    globalThis.fetch=async () => Response.json({success:false,hostname:"slot-kiosk-api.example.workers.dev"});
+    assert.equal(await turnstileOk(env,request,{turnstile:"token"}),false);
+  } finally {globalThis.fetch=original;}
 });

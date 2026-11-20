@@ -172,12 +172,15 @@ public class KioskApiClient : MonoBehaviour
                         MachineState state = JsonUtility.FromJson<MachineState>(response);
                         if (state.machine == null) throw new Exception("Malformed machine state");
                         MachineEnabled = state.machine.enabled;
-                        AcceptNewGames = MachineEnabled && state.session != null;
+                        bool eventActive = state.@event != null && state.@event.state == "active";
+                        AcceptNewGames = MachineEnabled && eventActive && state.session != null;
                         ActiveSessionId = state.session != null ? state.session.id : null;
                         ServerCredits = state.session != null ? state.session.credits : 0;
                         ActiveEventSlug = state.@event != null ? state.@event.slug : null;
                         if (PlayerText != null) PlayerText.text = state.session == null ? "Scan to join" : state.session.display_name;
-                        UpdateStatus(state.machine.enabled ? (state.session == null ? "READY – waiting for player" : "PLAYER READY") : "DISABLED BY OPERATOR");
+                        UpdateStatus(!MachineEnabled ? "DISABLED BY OPERATOR" :
+                            !eventActive ? "EVENT CLOSED – new spins blocked" :
+                            state.session == null ? "READY – waiting for player" : "PLAYER READY");
                         if (state.machine.command_seq > state.machine.ack_seq)
                             StartCoroutine(Acknowledge(state.machine.command_seq));
                     }
@@ -202,6 +205,7 @@ public class KioskApiClient : MonoBehaviour
 
     public void RequestCheckin(Action<bool, string> onReady)
     {
+        if (!MachineEnabled || !configValid) { onReady(false, "Machine unavailable – contact event staff"); return; }
         StartCoroutine(SignedRequest("POST", "/api/machine/checkins", "{}", (ok, response) =>
         {
             if (!ok) { onReady(false, response); return; }

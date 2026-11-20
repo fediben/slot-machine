@@ -46,6 +46,7 @@ public class KioskThemeLoader : MonoBehaviour
 
     private IEnumerator Load(string url, RawImage target, string label)
     {
+        // Unity 5.6 LoadImage is PNG/JPEG only. Ignore unsupported remote assets.
         if (!(url.EndsWith(".png") || url.EndsWith(".jpg") || url.EndsWith(".jpeg"))) yield break;
         string path = Path.Combine(Application.persistentDataPath, "theme-" + label + ".png");
         using (UnityWebRequest req = UnityWebRequest.Get(url))

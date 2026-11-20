@@ -133,7 +133,7 @@ async function machineRoutes(request, env, route, body, machine) {
   }
   return error("ROUTE_NOT_FOUND", 404);
 }
-async function turnstileOk(env, request, body) {
+export async function turnstileOk(env, request, body) {
   if (!env.TURNSTILE_SECRET) return env.APP_MODE === "development";
   const challenge = body.turnstile || "";
   if (typeof challenge !== "string" || !challenge) return false;
@@ -141,7 +141,12 @@ async function turnstileOk(env, request, body) {
   data.set("secret", env.TURNSTILE_SECRET); data.set("response", challenge);
   data.set("remoteip", request.headers.get("CF-Connecting-IP") || "");
   const resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: data });
-  return resp.ok && !!(await resp.json()).success;
+
+  if (!resp.ok) return false;
+  const verdict = await resp.json();
+  // Turnstile site keys can allow several hostnames. Bind the check-in token
+  // to this precise kiosk deployment, not any other allowed widget hostname.
+  return verdict.success === true && verdict.hostname === new URL(request.url).hostname;
 }
 async function joinRoutes(request, env, path, body) {
   const code = path.split("/").pop() || "";
@@ -306,7 +311,8 @@ export default {
         if (!asset) return json({ theme: folder, background_url: null, logo_url: null });
         let manifest;
         try { manifest=JSON.parse(await asset.text()); } catch { return error("THEME_MANIFEST_INVALID", 500); }
-        const valid=f=>typeof f==="string" && /^[a-zA-Z0-9_.-]+\.(png|jpg|jpeg|webp)$/.test(f);
+        // Unity 5.6 Texture2D.LoadImage supports PNG/JPEG; do not advertise WebP assets it cannot decode.
+        const valid=f=>typeof f==="string" && /^[a-zA-Z0-9_.-]+\.(png|jpg|jpeg)$/.test(f);
         const origin=new URL(request.url).origin;
         return json({ theme: folder, background_url:valid(manifest.background)?origin+"/api/themes/"+folder+"/"+manifest.background:null,
           logo_url:valid(manifest.logo)?origin+"/api/themes/"+folder+"/"+manifest.logo:null });
