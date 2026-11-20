@@ -22,46 +22,65 @@ try {
         throw "Cloudflare authentication required. Run: npx wrangler login"
     }
 
-    function Find-ExistingD1 {
-        # Wrangler's --json output is documented for D1 list.
-        $raw = & npx wrangler d1 list --json | Out-String
-        if ($LASTEXITCODE -ne 0) { throw "Cannot list D1 databases. Verify the Cloudflare account." }
-        try {
-            $all = @($raw | ConvertFrom-Json)
-        } catch {
-            throw "Unable to parse 'wrangler d1 list --json'. Do not create a duplicate database."
+    function Get-ValidD1Id([object]$record) {
+        if ($null -eq $record) { return $null }
+        foreach ($field in @('uuid','database_id','id')) {
+            $prop = $record.PSObject.Properties[$field]
+            if ($null -eq $prop -or $null -eq $prop.Value) { continue }
+            $value = [string]$prop.Value
+            if (($value -match '^[a-fA-F0-9]{32}$' -or $value -match '^[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}$') -and
+                $value -notmatch '^0{32}$' -and $value -ne '00000000-0000-0000-0000-000000000000') {
+                return $value.ToLowerInvariant()
+            }
         }
-        $matches = @($all | Where-Object { $_.name -eq "slot-kiosk-db" })
-        if ($matches.Count -gt 1) { throw "More than one slot-kiosk-db was found; select a database manually." }
-        if ($matches.Count -eq 1) { return $matches[0] }
         return $null
+    }
+
+    function Find-ExistingD1 {
+        # Windows PowerShell 5.1 may wrap a JSON array as ONE pipeline item.
+        # Explicit foreach enumeration prevents matching an entire array as one DB.
+        $lines = & npx wrangler d1 list --json
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot list D1 databases; check Cloudflare login.' }
+        try { $parsed = ConvertFrom-Json -InputObject ($lines | Out-String) }
+        catch { throw 'Invalid JSON from wrangler d1 list --json. Nothing changed.' }
+        $records = New-Object 'System.Collections.Generic.List[object]'
+        foreach ($record in $parsed) {
+            if ($record -is [System.Array]) {
+                foreach ($inner in $record) { $records.Add($inner) }
+            } else { $records.Add($record) }
+        }
+        $selected = @($records | Where-Object { $_ -ne $null -and [string]$_.name -eq 'slot-kiosk-db' })
+        if ($selected.Count -gt 1) { throw 'Multiple database records named slot-kiosk-db: refusing to guess.' }
+        if ($selected.Count -eq 0) { return $null }
+        $foundId = Get-ValidD1Id $selected[0]
+        if (-not $foundId) {
+            $fields = ($selected[0].PSObject.Properties | ForEach-Object { $_.Name }) -join ', '
+            throw "slot-kiosk-db exists but no valid ID field was found. Returned fields: $fields. Nothing changed."
+        }
+        return [pscustomobject]@{name='slot-kiosk-db'; uuid=$foundId}
     }
 
     $existing = Find-ExistingD1
     if ($null -ne $existing) {
-        if (-not $existing.uuid -or [string]$existing.uuid -notmatch '^[a-f0-9-]{36}$') {
-            throw "Existing slot-kiosk-db has no valid UUID. Nothing changed."
-        }
         if ($DatabaseId -and $DatabaseId -ne [string]$existing.uuid) {
-            throw "Supplied -DatabaseId does not match the existing slot-kiosk-db. Nothing changed."
+            throw 'Supplied DatabaseId does not match existing slot-kiosk-db. Nothing changed.'
         }
         $DatabaseId = [string]$existing.uuid
-        Write-Host "Reusing existing D1 database slot-kiosk-db: $DatabaseId" -ForegroundColor Green
+        Write-Host "Reusing existing slot-kiosk-db: $DatabaseId" -ForegroundColor Green
     } elseif ($DatabaseId) {
-        throw "The selected account has no slot-kiosk-db. Refusing an unknown -DatabaseId."
+        throw 'No slot-kiosk-db found in selected account. Refusing unknown DatabaseId.'
     } else {
-        Write-Host "No slot-kiosk-db found. Creating it once..." -ForegroundColor Cyan
+        Write-Host 'No existing slot-kiosk-db. Creating it once.' -ForegroundColor Cyan
         & npx wrangler d1 create slot-kiosk-db
-        if ($LASTEXITCODE -ne 0) { throw "D1 creation failed. Nothing deployed." }
+        if ($LASTEXITCODE -ne 0) { throw 'D1 create failed; no deployment performed.' }
         $created = Find-ExistingD1
-        if ($null -eq $created) { throw "D1 was created but not discoverable. Nothing deployed." }
+        if ($null -eq $created) { throw 'Created D1 but unable to discover it. No deployment performed.' }
         $DatabaseId = [string]$created.uuid
         Write-Host "Created slot-kiosk-db: $DatabaseId" -ForegroundColor Green
     }
 
-    if ($DatabaseId -notmatch '^[a-f0-9-]{36}$' -or
-        $DatabaseId -eq '00000000-0000-0000-0000-000000000000') {
-        throw "D1 UUID invalid or placeholder."
+    if (-not (Get-ValidD1Id ([pscustomobject]@{uuid=$DatabaseId}))) {
+        throw 'Invalid D1 identifier or placeholder. Nothing changed.'
     }
 
     # Validate all deployment prerequisites before touching live D1 resources.
@@ -79,10 +98,10 @@ try {
 
     $config = Join-Path $root "wrangler.toml"
     $content = [IO.File]::ReadAllText($config)
-    if ($content -notmatch 'database_id\s*=\s*"[a-f0-9-]{36}"') {
+    if ($content -notmatch 'database_id\s*=\s*"[a-fA-F0-9-]{32,36}"') {
         throw "Could not find the D1 database_id in wrangler.toml; file left unchanged."
     }
-    $content = [regex]::Replace($content, 'database_id\s*=\s*"[a-f0-9-]{36}"',
+    $content = [regex]::Replace($content, 'database_id\s*=\s*"[a-fA-F0-9-]{32,36}"',
       'database_id = "' + $DatabaseId + '"')
 
     if ($Deploy) {
