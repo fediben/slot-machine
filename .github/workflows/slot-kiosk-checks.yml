@@ -1,0 +1,33 @@
+name: Slot kiosk API checks
+on:
+  push:
+    paths: ['cloudflare/**', '.github/workflows/slot-kiosk-checks.yml']
+  pull_request:
+    paths: ['cloudflare/**', '.github/workflows/slot-kiosk-checks.yml']
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Security unit tests
+        run: npm test
+      - name: Worker syntax checks
+        run: |
+          node --check src/index.js
+          node --check src/crypto.js
+          node --check src/pages.js
+  unity-source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report legacy Unity version and adapter files
+        run: |
+          cat ProjectSettings/ProjectVersion.txt
+          test -f Assets/scripts/Kiosk/KioskApiClient.cs
+          test -f Assets/reel_scene.unity
