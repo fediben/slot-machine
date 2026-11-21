@@ -37,6 +37,7 @@ public class ReelManager : MonoBehaviour {
     public int lines_played = 1;
     public int respins_available = 0;
     public bool GAME_PLAYABLE, PLAYER_ACTIVE;
+    public bool ManagedByKiosk = false; // New scene: event bridge owns inputs and credits.
 
     public Bouncer cash_out_bouncer, login_bouncer;
 
@@ -72,6 +73,8 @@ public class ReelManager : MonoBehaviour {
             playRound();
         }
 
+        if (!ManagedByKiosk)
+        {
         if ((Input.GetButtonDown("Spin") || Input.GetButtonDown("Spin2")) && GAME_PLAYABLE && PLAYER_ACTIVE)
         {
             // SOund Effect for Lever
@@ -123,6 +126,7 @@ public class ReelManager : MonoBehaviour {
             //Start timer to prompt new players
             StartCoroutine(promotionalTimeout());
         }
+        } // End of legacy input branch; automatic bonus spins remain operational.
     }
 
     private IEnumerator promotionalTimeout()

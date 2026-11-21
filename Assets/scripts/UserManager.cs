@@ -4,7 +4,9 @@ using UnityEngine.Networking;
 
 public class UserManager : MonoBehaviour {
 
-    const string apiHost = "steffey-casinos.onthewifi.com:4815"; //Swap for your API host
+    // LEGACY INSECURE BALANCE LOGIN DISABLED. Keep this isolated until new QR flow is wired.
+    const string apiHost = "http://127.0.0.1:9";
+    public bool allowLegacyLogin = false;
 
     public string username;
 
@@ -34,12 +36,14 @@ public class UserManager : MonoBehaviour {
 
     public void logIn()
     {
+        if (!allowLegacyLogin) { Debug.LogWarning("Legacy QR/balance login disabled. Use KioskApiClient."); return; }
         //spawn QR reader and start request process
         StartCoroutine(runLogin());
     }
 
     public void logOut()
     {
+        if (!allowLegacyLogin) { Debug.LogWarning("Legacy logout disabled."); return; }
         // set final score
         setFinalBalance(score_man.getCredit());
 
@@ -47,11 +51,13 @@ public class UserManager : MonoBehaviour {
 
     public void setBalance(int newScore)
     {
+        if (!allowLegacyLogin) return;
         StartCoroutine(setUserBalance(username, newScore));
     }
 
     public void setFinalBalance(int newScore)
     {
+        if (!allowLegacyLogin) return;
         StartCoroutine(setFinalUserBalance(username, newScore));
     }
 

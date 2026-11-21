@@ -1,0 +1,23 @@
+name = "slot-kiosk-api"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# The valid, non-production placeholder UUID lets local D1 run in CI.
+# Replace before deployment using: npx wrangler d1 create slot-kiosk-db
+[[d1_databases]]
+binding = "DB"
+database_name = "slot-kiosk-db"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["0 3 * * *"]
+
+[vars]
+APP_MODE = "production"
+
+# Optional only after creating slot-kiosk-assets with Wrangler:
+# [[r2_buckets]]
+# binding = "ASSETS"
+# bucket_name = "slot-kiosk-assets"

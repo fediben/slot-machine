@@ -1,0 +1,67 @@
+name: Slot kiosk CI
+on:
+  push:
+    paths: ['cloudflare/**', 'Assets/scripts/**', 'docs/**', 'linux/**', '.github/workflows/slot-kiosk-checks.yml']
+  pull_request:
+    paths: ['cloudflare/**', 'Assets/scripts/**', 'docs/**', 'linux/**', '.github/workflows/slot-kiosk-checks.yml']
+permissions:
+  contents: read
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: API unit and cryptography tests
+        run: npm test
+      - name: Worker syntax
+        run: |
+          node --check src/index.js
+          node --check src/crypto.js
+          node --check src/pages.js
+      - name: D1 migrations and HTTP end-to-end test
+        run: bash tests/run-e2e.sh
+  powershell-preflight:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test D1 recovery without Cloudflare credentials
+        shell: powershell
+        run: |
+          .\\cloudflare\\tests\\preflight.test.ps1
+          .\\cloudflare\\tests\\account-setup.test.ps1
+      - name: Parse account setup assistant on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile("cloudflare/scripts/setup-account.ps1",[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | Format-Table; exit 1 }
+  unity-source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect Unity project and kiosk package
+        run: |
+          cat ProjectSettings/ProjectVersion.txt
+          test -f Assets/reel_scene.unity
+          for f in KioskApiClient KioskGameBridge KioskQrDisplay KioskLeaderboard KioskInput; do
+            test -f "Assets/scripts/Kiosk/${f}.cs"
+          done
+          bash -n linux/install-kiosk.sh
+          bash -n linux/launch-kiosk.sh
+          test -f Assets/Editor/SlotKioskSceneInstaller.cs
+          test -f Assets/Editor/BuildSlotKiosk.cs
+          test -f Assets/scripts/Kiosk/KioskThemeLoader.cs
+      - name: Parse PowerShell deployment tool
+        run: |
+          if command -v pwsh >/dev/null 2>&1; then
+            pwsh -NoProfile -Command '$tokens=$null;$errors=$null;[System.Management.Automation.Language.Parser]::ParseFile("cloudflare/scripts/prepare-cloudflare.ps1",[ref]$tokens,[ref]$errors) | Out-Null; if ($errors.Count -gt 0) { $errors | Format-Table; exit 1 }'
+          else
+            echo "PowerShell not available on runner; skipped syntax parse"
+          fi

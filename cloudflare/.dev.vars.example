@@ -1,0 +1,5 @@
+# Copy to .dev.vars; never commit real secrets.
+MACHINE_MASTER_KEY=REPLACE_WITH_LONG_RANDOM_SECRET
+PROFILE_PEPPER=REPLACE_WITH_DIFFERENT_LONG_RANDOM_SECRET
+# Only for localhost development. Production must use Cloudflare Access.
+ADMIN_DEV_TOKEN=REPLACE_WITH_LOCAL_DEV_TOKEN

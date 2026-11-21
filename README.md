@@ -1,3 +1,7 @@
+> **Kiosk modernization (draft):** This is the original Unity 5.6 game source. A new Cloudflare D1 / Worker event platform, kiosk bridge and back-office are being developed in branch `feature/kiosk-cloudflare-v1`. See [Migration roadmap](docs/KIOSK_ROADMAP.md) on that branch. The legacy QR/balance API is intentionally disabled there. **No production deployment or verified Unity kiosk build yet.**
+
+---
+
 # Slot Machine - Piggy Parade
 
 In 2019, we threw a casino-themed party for Alexandria's birthday. As an extra activity to the card games, 
