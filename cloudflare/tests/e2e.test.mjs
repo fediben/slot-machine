@@ -33,6 +33,7 @@ test("D1 event lifecycle, security, replay, stop acknowledgement", {timeout:9000
  assert.equal(provision.status,201,JSON.stringify(provision));
  const m={id:provision.data.id,key:Buffer.from(provision.data.machine_key,"base64url")};
  assert.equal(m.key.length,32);
+ assert.equal((await api("/api/machine/state")).status,401,"unsigned machine state must fail closed");
  assert.equal((await call(m,"/api/machine/state")).status,200);
  const nonce=randomUUID().replace(/-/g,"");
  assert.equal((await call(m,"/api/machine/state","GET",undefined,nonce)).status,200);
@@ -44,6 +45,7 @@ test("D1 event lifecycle, security, replay, stop acknowledgement", {timeout:9000
  const joined=await api("/api/join/"+token,"POST",{name:"Alice",pin:"542897"});
  assert.equal(joined.status,200,JSON.stringify(joined));
  assert.equal((await api("/api/join/"+token)).status,410);
+ assert.equal((await api("/api/join/"+token,"POST",{name:"Alice",pin:"542897"})).status,410,"claimed QR cannot create a second session");
  const state=await call(m,"/api/machine/state");
  const sid=state.data.session.id;assert.equal(state.data.session.credits,500);
  const spin=await call(m,"/api/machine/spins","POST",{session_id:sid,cost:50});
