@@ -1,6 +1,6 @@
 # Slot Kiosk V2 — overnight QA and release gates
 
-Last updated: 20 November 2026. This is a **draft engineering acceptance plan**, not a production approval.
+Last updated: 21 November 2026. This is a **draft engineering acceptance plan**, not a production approval.
 
 ## Runtime facts
 
@@ -54,3 +54,13 @@ These tests exercise code and simulated local D1, not Cloudflare production or a
 ## Guardrails for automated improvement
 
 Work on `feature/kiosk-cloudflare-v1` only. Never deploy, migrate remote D1 again, rotate secrets, merge PR #1, or assert physical testing without real evidence. Use a review-only draft PR and green tests as evidence of **source-level** improvements, not production acceptance.
+
+## 21 November source review: concurrency and release boundaries
+
+- Added HTTP regression assertions that an unsigned machine-state request fails with 401 and a successfully claimed QR link cannot create another session (commit `41f36f13b030d703fc66e8c902cce7eeaad8fe0d`). These are sequential replay checks, **not** a concurrent load test.
+- The one-use QR path claims the link and creates the session in a D1 batch. A concurrent double-submit and same-profile check-in from **two distinct kiosk links** need deterministic simultaneous-request regression tests before a multi-kiosk pilot; the current sequential E2E suite cannot establish serializability under load.
+- Spin issuance and score settlement use database conditions and score token uniqueness, but race tests must assert exactly one accepted credit/score mutation under parallel retries, timeout-after-commit and delayed offline replay. Verify D1 batch transaction semantics in the deployed runtime.
+- Leaderboards are explicitly provisional: score hashes protect payload consistency, **not** reel fairness or unique-person eligibility. Do not use as prize-awarding authority.
+- Admin and deployment checks remain source/mock-only. Validate real Access JWT audience, policy scoping, Turnstile exact hostname, CSV spreadsheet-injection handling, operator mobile layout and secret-safe provisioning on staging.
+- Unity adapter is source-inspected only; no Editor compilation, USB controls, physical screen, offline queue persistence or Linux launch was performed by this review.
+- Release gate: passing CI + two-machine concurrent staging tests + security/retention signoff + Unity physical pilot + explicit owner GO. Never infer a production GO from green CI.
